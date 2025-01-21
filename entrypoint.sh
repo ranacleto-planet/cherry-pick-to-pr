@@ -38,12 +38,14 @@ MAX_RETRIES=${MAX_RETRIES:-6}
 RETRY_INTERVAL=${RETRY_INTERVAL:-10}
 MERGED=""
 MERGE_COMMIT=""
+PR_TITLE=""
 pr_resp=""
 
 for ((i = 0 ; i < $MAX_RETRIES ; i++)); do
 	pr_resp=$(gh api "${URI}/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
 	MERGED=$(echo "$pr_resp" | jq -r .merged)
 	MERGE_COMMIT=$(echo "$pr_resp" | jq -r .merge_commit_sha)
+	PR_TITLE=$(echo "$pr_resp" | jq -r .title)
 	if [[ "$MERGED" == "null" ]]; then
 		echo "The PR is not ready to cherry-pick, retry after $RETRY_INTERVAL seconds"
 		sleep $RETRY_INTERVAL
@@ -116,7 +118,7 @@ NEW_BRANCH="cherry-pick-pr-$PR_NUMBER-$(date +%s)"
 git checkout -b $NEW_BRANCH origindest/$TARGET_BRANCH
 
 # Perform the cherry-pick
-																   
+				   
 git cherry-pick -x $MERGE_COMMIT &> /tmp/error.log || (
 		gh pr comment $PR_NUMBER --body "🤖 says: Error cherry-picking.<br/><br/>$(cat /tmp/error.log)"
 		exit 1
@@ -125,8 +127,8 @@ git cherry-pick -x $MERGE_COMMIT &> /tmp/error.log || (
 # Push the new branch
 git push origindest $NEW_BRANCH
 
-# Create a new pull request
-NEW_PR=$(gh pr create --title "Cherry-pick of PR #$PR_NUMBER to $TARGET_BRANCH" \
+# Create a new pull request with the original title
+NEW_PR=$(gh pr create --title "[Cherry-pick] $PR_TITLE" \
 	--body "Cherry-pick of PR #$PR_NUMBER by @$USER_LOGIN" \
 	--base $TARGET_BRANCH --head $NEW_BRANCH)
 
