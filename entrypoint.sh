@@ -5,7 +5,7 @@ set -e
 REPO_NAME=$(jq -r ".repository.full_name" "$GITHUB_EVENT_PATH")
 
 onerror() {
-	gh pr comment $PR_NUMBER --body "🤖 says: ‼️ cherry pick action failed.<br/>See: https://github.com/$REPO_NAME/actions/runs/$GITHUB_RUN_ID"
+	gh pr comment $PR_NUMBER --body "🤖 says: ‼️ Cherry-pick action failed.<br/>See: https://github.com/$REPO_NAME/actions/runs/$GITHUB_RUN_ID"
 	exit 1
 }
 trap onerror ERR
@@ -54,7 +54,7 @@ for ((i = 0 ; i < $MAX_RETRIES ; i++)); do
 done
 
 if [[ "$MERGED" != "true" ]] ; then
-	echo "PR is not merged! Can't cherry pick it."
+	echo "PR is not merged! Can't cherry-pick it."
 	gh pr comment $PR_NUMBER --body "🤖 says: ‼️ PR can't be cherry-picked, please merge it first."
 	exit 1
 fi
@@ -106,18 +106,30 @@ git remote add origindest https://$USER_LOGIN:$COMMITTER_TOKEN@github.com/$REPO_
 
 set -o xtrace
 
-# make sure branches are up-to-date
+# Fetch branches
 git fetch origin $TARGET_BRANCH
 git fetch origindest $TARGET_BRANCH
 
-# do the cherry-pick
-git checkout -b origindest/$TARGET_BRANCH origindest/$TARGET_BRANCH
-git cherry-pick $MERGE_COMMIT &> /tmp/error.log || (
+
+# Create a new branch for the cherry-pick
+NEW_BRANCH="cherry-pick-pr-$PR_NUMBER-$(date +%s)"
+git checkout -b $NEW_BRANCH origindest/$TARGET_BRANCH
+
+# Perform the cherry-pick
+																   
+git cherry-pick -x $MERGE_COMMIT &> /tmp/error.log || (
 		gh pr comment $PR_NUMBER --body "🤖 says: Error cherry-picking.<br/><br/>$(cat /tmp/error.log)"
 		exit 1
 )
 
-# push back
-git push origindest origindest/$TARGET_BRANCH:$TARGET_BRANCH
+# Push the new branch
+git push origindest $NEW_BRANCH
 
-gh pr comment $PR_NUMBER --body "🤖 says: cherry pick action finished successfully 🎉!<br/>See: https://github.com/$REPO_NAME/actions/runs/$GITHUB_RUN_ID"
+# Create a new pull request
+NEW_PR=$(gh pr create --title "Cherry-pick of PR #$PR_NUMBER to $TARGET_BRANCH" \
+	--body "Cherry-pick of PR #$PR_NUMBER by @$USER_LOGIN" \
+	--base $TARGET_BRANCH --head $NEW_BRANCH)
+
+echo "New pull request created: $NEW_PR"
+
+gh pr comment $PR_NUMBER --body "🤖 says: Cherry-pick action finished successfully 🎉!<br/>A new PR has been created: $NEW_PR"
